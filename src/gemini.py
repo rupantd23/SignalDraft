@@ -47,7 +47,14 @@ class GeminiService:
         except GeminiError:
             raise
         except Exception as exc:
-            raise GeminiError(f"Gemini request failed: {exc}") from exc
+            provider_error = str(exc).upper()
+            if any(marker in provider_error for marker in ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED")):
+                raise GeminiError(
+                    "Gemini is temporarily busy. Please wait a moment and try again."
+                ) from exc
+            raise GeminiError(
+                "Gemini could not complete this request. Please try again."
+            ) from exc
 
     def extract_evidence(
         self, prospect_name: str, company_name: str, sources: list[Source]

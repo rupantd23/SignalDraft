@@ -30,10 +30,23 @@ human review. It does not send email.
    npm run dev
    ```
 
+7. For the deployed frontend, set these Vercel variables:
+
+   ```text
+   VITE_API_URL=https://your-render-service.onrender.com
+   VITE_SUPABASE_URL=https://your-project.supabase.co
+   VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
+   ```
+
 Open the local URL printed by Vite, normally `http://localhost:5173`.
 
 The previous Streamlit interface remains available as a fallback with
 `streamlit run app.py`. The React frontend is now the primary interface.
+
+The React interface uses Supabase Auth. Run [`sql/schema.sql`](sql/schema.sql)
+in the Supabase SQL editor to add the `owner_id` column, enable row-level
+security, and create per-user policies. The FastAPI backend validates each
+Supabase access token and only returns runs owned by that user.
 
 The UI can open without credentials, but a live research run requires both API
 keys. Missing credentials and provider failures are shown as failed stages; no

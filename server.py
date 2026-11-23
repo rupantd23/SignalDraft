@@ -1,9 +1,11 @@
 from functools import lru_cache
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+from supabase import create_client
 
 from src.config import settings
 from src.models import ProspectInput, ResearchRun
@@ -13,6 +15,7 @@ from src.review import update_review
 
 
 app = FastAPI(title="SignalDraft API", version="1.0.0")
+bearer = HTTPBearer(auto_error=False)
 
 allowed_origins = [
     origin.strip()
@@ -34,6 +37,33 @@ def repository() -> RunRepository:
     return create_repository(settings)
 
 
+@lru_cache
+def auth_client():
+    if not settings.supabase_configured:
+        return None
+    return create_client(settings.supabase_url, settings.supabase_key)
+
+
+def current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Sign in is required.")
+    client = auth_client()
+    if client is None:
+        raise HTTPException(status_code=503, detail="Authentication is not configured.")
+    try:
+        response = client.auth.get_user(credentials.credentials)
+        user = getattr(response, "user", None)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=401, detail="Your session is invalid or expired."
+        ) from exc
+    if user is None or not getattr(user, "id", None):
+        raise HTTPException(status_code=401, detail="Your session is invalid or expired.")
+    return user
+
+
 class ReviewRequest(BaseModel):
     subject: str
     body: str
@@ -51,8 +81,9 @@ def health() -> dict[str, object]:
 
 
 @app.post("/api/runs", response_model=ResearchRun)
-def create_run(prospect: ProspectInput) -> ResearchRun:
+def create_run(prospect: ProspectInput, user=Depends(current_user)) -> ResearchRun:
     run = run_pipeline(prospect)
+    run.owner_id = user.id
     try:
         repository().save(run)
     except Exception as exc:
@@ -66,9 +97,10 @@ def create_run(prospect: ProspectInput) -> ResearchRun:
 @app.get("/api/runs", response_model=list[ResearchRun])
 def list_runs(
     limit: int = Query(default=50, ge=1, le=100),
+    user=Depends(current_user),
 ) -> list[ResearchRun]:
     try:
-        return repository().list_recent(limit)
+        return repository().list_recent(limit, owner_id=user.id)
     except Exception as exc:
         raise HTTPException(
             status_code=502,
@@ -77,9 +109,9 @@ def list_runs(
 
 
 @app.get("/api/runs/{run_id}", response_model=ResearchRun)
-def get_run(run_id: str) -> ResearchRun:
+def get_run(run_id: str, user=Depends(current_user)) -> ResearchRun:
     try:
-        run = repository().get(run_id)
+        run = repository().get(run_id, owner_id=user.id)
     except Exception as exc:
         raise HTTPException(
             status_code=502,
@@ -91,9 +123,13 @@ def get_run(run_id: str) -> ResearchRun:
 
 
 @app.patch("/api/runs/{run_id}/review", response_model=ResearchRun)
-def review_run(run_id: str, request: ReviewRequest) -> ResearchRun:
+def review_run(
+    run_id: str,
+    request: ReviewRequest,
+    user=Depends(current_user),
+) -> ResearchRun:
     try:
-        run = repository().get(run_id)
+        run = repository().get(run_id, owner_id=user.id)
     except Exception as exc:
         raise HTTPException(
             status_code=502,

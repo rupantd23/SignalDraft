@@ -1,14 +1,24 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import { supabase } from "./supabase";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-    ...options,
-  });
+async function request(path, options = {}, accessToken = "") {
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...(options.headers || {}),
+      },
+      ...options,
+    });
+  } catch {
+    throw new Error("The SignalDraft service is temporarily unavailable. Please wait a moment and try again.");
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = Array.isArray(payload.detail)
@@ -23,7 +33,72 @@ function StatusPill({ value }) {
   return <span className={`pill pill-${value}`}>{value.replaceAll("_", " ")}</span>;
 }
 
+function AuthScreen() {
+  const [mode, setMode] = useState("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!supabase) {
+      setError("Authentication is not configured for this deployment.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    setMessage("");
+    const result = mode === "signin"
+      ? await supabase.auth.signInWithPassword({ email, password })
+      : await supabase.auth.signUp({ email, password });
+    setLoading(false);
+    if (result.error) {
+      setError(result.error.message);
+    } else if (mode === "signup" && !result.data.session) {
+      setMessage("Account created. Check your email to confirm your account, then sign in.");
+    }
+  }
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-card">
+        <p className="eyebrow">Private workspace</p>
+        <h1>SignalDraft</h1>
+        <p className="subtitle">Sign in to keep your prospect research and drafts private to your account.</p>
+        {error && <div className="alert error">{error}</div>}
+        {message && <div className="alert info">{message}</div>}
+        <form onSubmit={submit}>
+          <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
+          <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength="6" required /></label>
+          <button className="primary-button auth-button" disabled={loading}>
+            {loading ? "Working…" : mode === "signin" ? "Sign in" : "Create account"}
+          </button>
+        </form>
+        <button className="link-button auth-switch" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setError(""); setMessage(""); }}>
+          {mode === "signin" ? "Need an account? Sign up" : "Already have an account? Sign in"}
+        </button>
+      </section>
+    </main>
+  );
+}
+
+function FailureNotice({ message }) {
+  const temporary = message.toLowerCase().includes("temporarily busy");
+  return (
+    <div className={`failure-notice ${temporary ? "temporary" : "general"}`}>
+      <div className="failure-icon" aria-hidden="true">{temporary ? "◌" : "!"}</div>
+      <div>
+        <strong>{temporary ? "Gemini is temporarily busy" : "The run could not finish"}</strong>
+        <p>{temporary ? "The AI service is handling high demand. Your research sources are safe. Please wait a moment, then try again." : message}</p>
+      </div>
+    </div>
+  );
+}
+
 function App() {
+  const [session, setSession] = useState(null);
   const [prospect, setProspect] = useState({
     full_name: "",
     company_name: "",
@@ -38,17 +113,27 @@ function App() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  async function loadRuns() {
+  async function loadRuns(accessToken = session?.access_token) {
+    if (!accessToken) return;
     try {
-      setRuns(await request("/api/runs"));
+      setRuns(await request("/api/runs", {}, accessToken));
     } catch (err) {
       setError(err.message);
     }
   }
 
   useEffect(() => {
-    loadRuns();
+    if (!supabase) return undefined;
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+    });
+    return () => listener.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (session?.access_token) loadRuns(session.access_token);
+  }, [session?.access_token]);
 
   function updateField(event) {
     setProspect({ ...prospect, [event.target.name]: event.target.value });
@@ -63,12 +148,12 @@ function App() {
       const result = await request("/api/runs", {
         method: "POST",
         body: JSON.stringify(prospect),
-      });
+      }, session.access_token);
       setRun(result);
       setSubject(result.draft?.subject || "");
       setBody(result.draft?.body || "");
       setMessage(`Run finished: ${result.outcome.replaceAll("_", " ")}.`);
-      await loadRuns();
+      await loadRuns(session.access_token);
     } catch (err) {
       setError(err.message);
       setMessage("");
@@ -84,12 +169,12 @@ function App() {
       const updated = await request(`/api/runs/${run.id}/review`, {
         method: "PATCH",
         body: JSON.stringify({ subject, body, action }),
-      });
+      }, session.access_token);
       setRun(updated);
       setSubject(updated.draft?.subject || "");
       setBody(updated.draft?.body || "");
       setMessage(`Draft ${action}.`);
-      await loadRuns();
+      await loadRuns(session.access_token);
     } catch (err) {
       setError(err.message);
     }
@@ -103,6 +188,14 @@ function App() {
     setError("");
   }
 
+  async function signOut() {
+    await supabase?.auth.signOut();
+    setRun(null);
+    setRuns([]);
+  }
+
+  if (!supabase || !session) return <AuthScreen />;
+
   return (
     <main className="shell">
       <header className="hero">
@@ -113,7 +206,10 @@ function App() {
             Research a prospect, find a defensible business signal, and prepare a draft for human review.
           </p>
         </div>
-        <div className="hero-note">No email is sent automatically.</div>
+        <div className="hero-actions">
+          <div className="hero-note">No email is sent automatically.</div>
+          <button className="link-button signout-button" onClick={signOut}>Sign out</button>
+        </div>
       </header>
 
       {error && <div className="alert error">{error}</div>}
@@ -175,7 +271,7 @@ function App() {
                   </div>
                 ))}
               </div>
-              {run.error && <p className="error-text">{run.error}</p>}
+              {run.error && <FailureNotice message={run.error} />}
             </>
           )}
         </section>
@@ -240,7 +336,7 @@ function App() {
       <section className="card history-card">
         <div className="section-heading">
           <div><p className="eyebrow">History</p><h2>Recent runs</h2></div>
-          <button className="link-button" onClick={loadRuns}>Refresh</button>
+          <button className="link-button" onClick={() => loadRuns(session.access_token)}>Refresh</button>
         </div>
         {runs.length === 0 ? <div className="empty-state">No saved runs yet.</div> : (
           <div className="history-list">
