@@ -1,0 +1,24 @@
+{
+  "prospect": {
+    "full_name": "Jane Smith",
+    "company_name": "Acme Corporation",
+    "company_domain": "acme.com",
+    "job_title": "VP of Operations"
+  },
+  "source": {
+    "id": "src-stale",
+    "title": "Old Acme transformation announcement",
+    "url": "https://acme.com/news/old",
+    "content": "Jane Smith at Acme Corporation announced a procurement workflow redesign."
+  },
+  "evidence": {
+    "id": "e1",
+    "claim": "Acme announced a procurement workflow redesign",
+    "quote": "announced a procurement workflow redesign",
+    "source_id": "src-stale",
+    "event_date": "2024-01-10",
+    "signal_type": "operations initiative",
+    "role_relevance": 90,
+    "offer_relevance": 95
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "prospect": {
+    "full_name": "Ari Example",
+    "company_name": "Small Example Co",
+    "company_domain": "smallexample.test",
+    "job_title": "Operations Manager"
+  },
+  "sources": []
+}

@@ -1,0 +1,19 @@
+{
+  "prospect": {
+    "full_name": "Jane Smith",
+    "company_name": "Acme Corporation",
+    "company_domain": "acme.com",
+    "job_title": "VP of Operations"
+  },
+  "source": {
+    "id": "src-conflict",
+    "title": "Rival Industries leadership",
+    "url": "https://rival.example/about",
+    "content": "Jane Smith is the current Chief Operating Officer at Rival Industries."
+  },
+  "identity_assessment": {
+    "status": "conflicting",
+    "rationale": "A source identifies Jane Smith as a current executive at Rival Industries.",
+    "supporting_source_ids": ["src-conflict"]
+  }
+}

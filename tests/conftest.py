@@ -1,0 +1,15 @@
+import json
+from pathlib import Path
+
+import pytest
+
+
+FIXTURES = Path(__file__).parents[1] / "fixtures"
+
+
+@pytest.fixture
+def load_fixture():
+    def load(name: str) -> dict:
+        return json.loads((FIXTURES / f"{name}.json").read_text())
+
+    return load

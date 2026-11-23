@@ -1,0 +1,19 @@
+{
+  "prospect": {
+    "full_name": "Jane Smith",
+    "company_name": "Acme Corporation",
+    "company_domain": "acme.com",
+    "job_title": "VP of Operations"
+  },
+  "source": {
+    "id": "src-ambiguous",
+    "title": "Operations leaders to watch",
+    "url": "https://industry.example/leaders",
+    "content": "Jane Smith is an operations leader focused on procurement transformation."
+  },
+  "identity_assessment": {
+    "status": "ambiguous",
+    "rationale": "The name appears but the employer is not established.",
+    "supporting_source_ids": ["src-ambiguous"]
+  }
+}
